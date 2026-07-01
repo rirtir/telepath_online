@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>以心伝心 -TELEPATH-</title>
+<style>
+  :root{
+    --bg:#10131a; --panel:#1a1f2b; --panel2:#222a3a; --line:#2c3648;
+    --text:#e7ecf3; --muted:#9aa7bd; --accent:#4da3ff; --gold:#ffcf4d;
+    --good:#46d17a; --bad:#ff5d6c;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Segoe UI",sans-serif;
+    background:var(--bg); color:var(--text);
+    min-height:100vh; -webkit-tap-highlight-color:transparent;
+    padding:14px; display:flex; justify-content:center;
+  }
+  .wrap{ width:100%; max-width:560px; }
+  h1{ font-size:22px; margin:4px 0 2px; letter-spacing:2px; }
+  h1 small{ display:block; font-size:11px; color:var(--muted); letter-spacing:1px; font-weight:normal; }
+  h2{ font-size:15px; margin:0 0 10px; color:var(--muted); font-weight:600; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin-top:14px; }
+  .muted{ color:var(--muted); }
+  .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .spacer{ flex:1; }
+  button{
+    font-family:inherit; font-size:15px; font-weight:600; color:#fff;
+    background:var(--accent); border:none; border-radius:10px; padding:11px 16px;
+    cursor:pointer; transition:transform .1s, background .15s, opacity .15s;
+  }
+  button:hover{ filter:brightness(1.08); }
+  button:active{ transform:scale(.96); }
+  button:disabled{ opacity:.4; cursor:not-allowed; }
+  button.ghost{ background:var(--panel2); border:1px solid var(--line); color:var(--text); }
+  button.good{ background:var(--good); }
+  button.gold{ background:var(--gold); color:#3a2c00; }
+  input[type=text]{
+    font-family:inherit; font-size:15px; color:var(--text); background:var(--panel2);
+    border:1px solid var(--line); border-radius:10px; padding:10px 12px; width:100%;
+  }
+  .hidden{ display:none !important; }
+
+  /* 接続ステータス */
+  .status{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); }
+  .dot{ width:9px; height:9px; border-radius:50%; background:var(--bad); }
+  .dot.on{ background:var(--good); }
+
+  /* ロビー：スロット一覧 */
+  .slotlist{ display:flex; flex-direction:column; gap:8px; margin:12px 0; }
+  .slotchip{ display:flex; align-items:center; gap:10px; background:var(--panel2);
+    border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .slotno{ width:26px; height:26px; border-radius:50%; display:flex; align-items:center;
+    justify-content:center; font-size:12px; font-weight:700; color:#0c111b; flex:none; }
+  .slotchip .nm{ font-weight:600; }
+  .slotchip .me{ font-size:11px; color:var(--accent); border:1px solid var(--accent);
+    border-radius:6px; padding:1px 6px; }
+  .offline{ opacity:.45; }
+
+  .diffbtns{ display:flex; gap:8px; }
+  .diffbtns button{ flex:1; background:var(--panel2); border:1px solid var(--line); }
+  .diffbtns button.sel{ background:var(--accent); border-color:var(--accent); }
+  details{ margin-top:12px; } summary{ cursor:pointer; color:var(--muted); font-size:13px; }
+  details p, details li{ font-size:13px; color:var(--muted); line-height:1.7; }
+
+  /* ゲームHUD */
+  .hud{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px; }
+  .badge{ background:var(--panel2); border:1px solid var(--line); border-radius:999px;
+    padding:5px 12px; font-size:13px; }
+  .hearts{ font-size:18px; letter-spacing:2px; }
+
+  /* ボード */
+  .boardwrap{ display:flex; justify-content:center; margin:14px 0; }
+  .board{ position:relative; width:min(92vw,460px);
+    display:grid; background:var(--line); border:2px solid var(--line); border-radius:8px; overflow:hidden; }
+  .cell{ position:relative; background:#232b3c; border:1px solid #1b2230; }
+  .cell.wall{ background:#0b0e15; border-color:#0b0e15;
+    box-shadow: inset 0 0 0 2px #05070c; }
+  .cell.goal{ background:#2a2f22; }
+  .cell.goal .flag{ position:absolute; inset:0; display:flex; align-items:center;
+    justify-content:center; font-size:min(6vw,30px); }
+  .goalring{ position:absolute; border:2px dashed var(--gold); border-radius:6px;
+    pointer-events:none; opacity:.9; }
+  .char{ position:absolute; border-radius:50%;
+    background:radial-gradient(circle at 32% 30%, #bfe0ff, var(--accent) 62%, #2b74c9);
+    box-shadow:0 0 12px rgba(77,163,255,.7), inset 0 -3px 6px rgba(0,0,0,.3);
+    transform:translate(-50%,-50%); transition:left .3s ease, top .3s ease, box-shadow .2s;
+    z-index:5; display:flex; align-items:center; justify-content:center; }
+  .char.blocked{ box-shadow:0 0 12px var(--bad), inset 0 -3px 6px rgba(0,0,0,.3); }
+
+  /* 操作パネル（十字キー） */
+  .selpanel{ margin-top:6px; }
+  .seq{ display:flex; gap:6px; justify-content:center; flex-wrap:wrap; margin:10px 0; min-height:44px; }
+  .seqbox{ width:40px; height:40px; border-radius:8px; border:1px solid var(--line);
+    background:var(--panel2); display:flex; align-items:center; justify-content:center;
+    font-size:22px; font-weight:700; }
+  .seqbox.empty{ color:var(--line); }
+  .dpad{ display:grid; grid-template-columns:repeat(3,64px); grid-template-rows:repeat(3,54px);
+    gap:8px; justify-content:center; margin:6px auto; }
+  .dpad button{ font-size:24px; padding:0; background:var(--panel2); border:1px solid var(--line); }
+  .dpad button.stay{ font-size:13px; }
+  .dpad .empty{ visibility:hidden; }
+  .selctrl{ display:flex; gap:8px; justify-content:center; margin-top:8px; }
+
+  /* ready 行 / 公開 */
+  .players{ display:flex; flex-direction:column; gap:7px; margin-top:6px; }
+  .prow{ display:flex; align-items:center; gap:10px; background:var(--panel2);
+    border:1px solid var(--line); border-radius:10px; padding:8px 12px; }
+  .prow .nm{ font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .prow .st{ margin-left:auto; font-size:13px; color:var(--muted); }
+  .prow .ops{ margin-left:auto; display:flex; gap:4px; }
+  .opglyph{ width:26px; height:26px; border-radius:6px; display:flex; align-items:center;
+    justify-content:center; font-size:15px; font-weight:700; color:#0c111b; }
+
+  .banner{ text-align:center; padding:14px; border-radius:12px; margin-top:12px; font-weight:700; }
+  .banner.win{ background:rgba(70,209,122,.15); border:1px solid var(--good); color:var(--good); }
+  .banner.lose{ background:rgba(255,93,108,.13); border:1px solid var(--bad); color:var(--bad); }
+  .banner.info{ background:var(--panel2); border:1px solid var(--line); }
+  .commentary{ text-align:center; min-height:22px; color:var(--muted); font-size:14px; margin-top:6px; }
+  .center{ text-align:center; }
+  .mt{ margin-top:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row">
+    <div>
+      <h1>以心伝心<small>T E L E P A T H — みんなで1体を動かす読み合い協力ゲーム</small></h1>
+    </div>
+    <div class="spacer"></div>
+    <div class="status"><span id="dot" class="dot"></span><span id="statusText">接続中…</span></div>
+  </div>
+
+  <!-- ============ ロビー ============ -->
+  <div id="lobby" class="panel hidden">
+    <h2>ロビー</h2>
+
+    <div id="nameArea">
+      <div class="muted" style="font-size:13px;margin-bottom:6px;">ニックネーム</div>
+      <div class="row">
+        <input id="nameInput" type="text" maxlength="16" placeholder="名前を入力" />
+        <button id="nameSave" class="ghost">保存</button>
+      </div>
+    </div>
+
+    <div class="slotlist" id="slotList"></div>
+    <div class="row">
+      <button id="joinBtn">参加する</button>
+      <button id="leaveBtn" class="ghost hidden">スロットから外れる</button>
+    </div>
+
+    <div id="hostArea" class="mt hidden">
+      <div class="muted" style="font-size:13px;margin:10px 0 6px;">難易度（1手/人 → 3手/人）</div>
+      <div class="diffbtns" id="diffBtns">
+        <button data-diff="easy">やさしい<br><small class="muted">1手</small></button>
+        <button data-diff="normal">ふつう<br><small class="muted">2手</small></button>
+        <button data-diff="hard">むずかしい<br><small class="muted">3手</small></button>
+      </div>
+      <button id="startBtn" class="good mt" style="width:100%">ゲーム開始</button>
+      <div id="startHint" class="muted center mt" style="font-size:13px;"></div>
+    </div>
+    <div id="waitHostArea" class="muted center mt hidden" style="font-size:13px;">
+      1P（ホスト）が難易度を選んで開始します。
+    </div>
+
+    <details>
+      <summary>遊び方</summary>
+      <p>全員で <b>1体のキャラクター</b> を動かし、<b>🏁ゴール</b> を目指す協力ゲームです。</p>
+      <ul>
+        <li>各自「自分の操作（↑↓←→ / とどまる）」を、他の人に見えない状態で選んで決定します。</li>
+        <li>全員が決定すると、<b>プレイヤー順（1P→2P→…）</b>に操作が実行されます。</li>
+        <li>全操作を終えた時点でキャラがゴール上にいればクリア。壁や画面外へは進めず「空振り」します。</li>
+        <li><b>合計手数 ＞ 最短距離</b> のときは、誰かが「とどまる」を選ぶ必要があります。</li>
+        <li>失敗しても3回まで挑戦可能。失敗すると全員の選択が公開されるので、それを読んで次の手を合わせましょう。</li>
+      </ul>
+      <p class="muted">※ 別のタブ / 端末で同じURLを開くと、その分だけ参加できます（2〜6人）。</p>
+    </details>
+  </div>
+
+  <!-- ============ ゲーム ============ -->
+  <div id="game" class="panel hidden">
+    <div class="hud">
+      <span class="badge" id="attemptBadge">挑戦 1</span>
+      <span class="hearts" id="hearts"></span>
+      <span class="spacer"></span>
+      <span class="badge" id="diffBadge"></span>
+    </div>
+    <div class="center muted" id="budgetLine" style="font-size:13px;margin-top:6px;"></div>
+
+    <div class="boardwrap">
+      <div class="board" id="board"></div>
+    </div>
+
+    <div class="commentary" id="commentary"></div>
+
+    <!-- 自分の操作選択 -->
+    <div class="selpanel" id="selPanel">
+      <div class="center muted" id="turnInfo" style="font-size:13px;"></div>
+      <div class="seq" id="seq"></div>
+      <div class="dpad" id="dpad">
+        <span class="empty"></span>
+        <button data-op="U">↑</button>
+        <span class="empty"></span>
+        <button data-op="L">←</button>
+        <button data-op="S" class="stay">とどまる</button>
+        <button data-op="R">→</button>
+        <span class="empty"></span>
+        <button data-op="D">↓</button>
+        <span class="empty"></span>
+      </div>
+      <div class="selctrl">
+        <button id="undoBtn" class="ghost">1つ戻す</button>
+        <button id="clearBtn" class="ghost">クリア</button>
+        <button id="submitBtn" class="good">これで決定！</button>
+      </div>
+      <div class="selctrl">
+        <button id="unsubmitBtn" class="ghost hidden">やり直す</button>
+      </div>
+      <div class="center muted" id="selMsg" style="font-size:13px;margin-top:6px;"></div>
+    </div>
+
+    <!-- プレイヤーの状態 / 公開 -->
+    <div class="players" id="players"></div>
+
+    <!-- 結果 -->
+    <div id="banner" class="banner hidden"></div>
+    <div class="center mt">
+      <button id="nextBtn" class="hidden">次の挑戦へ</button>
+      <button id="againBtn" class="gold hidden">もう一度あそぶ</button>
+      <span id="againWait" class="muted hidden" style="font-size:13px;">ホストの操作を待っています…</span>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+const OP_GLYPH = { U:"↑", D:"↓", L:"←", R:"→", S:"⏸" };
+const OP_LABEL = { U:"上", D:"下", L:"左", R:"右", S:"とどまる" };
+const SLOT_COLORS = ["#4da3ff","#ff8f4d","#46d17a","#c98bff","#ffce4d","#ff6fae"];
+const DIFF_LABEL = { easy:"やさしい", normal:"ふつう", hard:"むずかしい" };
+
+// ---- 状態 ----
+let ws = null;
+let uid = sessionStorage.getItem("telepath_uid") || null; // タブごとに別人格
+let latest = null;
+let mySeq = [];               // 選択中の操作列（ローカル）
+let curAttemptKey = null;     // 選択リセット判定用
+let animating = false;
+let animatedId = null;        // 直近にアニメ済みの last_attempt.attempt
+let boardSig = null;          // 盤面再構築判定用
+
+// ---- DOM ----
+const $ = (id) => document.getElementById(id);
+const dot = $("dot"), statusText = $("statusText");
+const lobby = $("lobby"), game = $("game");
+
+// ================= WebSocket =================
+function connect(){
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const q = uid ? ("?uid=" + encodeURIComponent(uid)) : "";
+  ws = new WebSocket(`${proto}://${location.host}/ws${q}`);
+
+  ws.onopen = () => { setStatus(true); };
+  ws.onclose = () => { setStatus(false); setTimeout(connect, 1200); };
+  ws.onerror = () => { try{ ws.close(); }catch(e){} };
+  ws.onmessage = (ev) => {
+    let msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
+    if(msg.type === "ASSIGN_ID"){
+      uid = msg.user_id;
+      sessionStorage.setItem("telepath_uid", uid);
+    } else if(msg.type === "STATE"){
+      latest = msg;
+      render();
+    } else if(msg.type === "PONG"){
+      /* keepalive */
+    }
+  };
+}
+function send(obj){
+  if(ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+function setStatus(on){
+  dot.classList.toggle("on", on);
+  statusText.textContent = on ? "接続中" : "再接続中…";
+}
+setInterval(() => send({type:"PING"}), 25000); // Render idle 対策
+
+// ================= 描画 =================
+function render(){
+  if(!latest) return;
+  const g = latest.game;
+  if(!g.started){ lobby.classList.remove("hidden"); game.classList.add("hidden"); renderLobby(); }
+  else { lobby.classList.add("hidden"); game.classList.remove("hidden"); renderGame(); }
+}
+
+// ---- ロビー ----
+function renderLobby(){
+  const s = latest, L = s.lobby;
+  const mySlot = s.you.slot;
+
+  // スロット一覧
+  const list = $("slotList");
+  list.innerHTML = "";
+  L.slots.forEach(sl => {
+    const chip = document.createElement("div");
+    chip.className = "slotchip" + (sl.connected ? "" : " offline");
+    const no = document.createElement("div");
+    no.className = "slotno"; no.textContent = (sl.slot+1) + "P";
+    no.style.background = SLOT_COLORS[sl.slot % SLOT_COLORS.length];
+    const nm = document.createElement("div"); nm.className = "nm"; nm.textContent = sl.name;
+    chip.appendChild(no); chip.appendChild(nm);
+    if(sl.slot === mySlot){ const me=document.createElement("span"); me.className="me"; me.textContent="あなた"; chip.appendChild(me); }
+    if(!sl.connected){ const off=document.createElement("span"); off.className="st muted"; off.style.marginLeft="auto"; off.style.fontSize="12px"; off.textContent="切断"; chip.appendChild(off); }
+    list.appendChild(chip);
+  });
+  if(L.slots.length === 0){
+    const e = document.createElement("div"); e.className="muted"; e.style.fontSize="13px";
+    e.textContent = "まだ誰も参加していません。"; list.appendChild(e);
+  }
+
+  // 参加/退出ボタン
+  const joined = mySlot !== null;
+  $("joinBtn").classList.toggle("hidden", joined || L.count >= L.max_players);
+  $("leaveBtn").classList.toggle("hidden", !joined);
+
+  // ホスト操作
+  const isHost = mySlot === 0;
+  $("hostArea").classList.toggle("hidden", !isHost);
+  $("waitHostArea").classList.toggle("hidden", isHost || !joined);
+  if(isHost){
+    document.querySelectorAll("#diffBtns button").forEach(b => {
+      b.classList.toggle("sel", b.dataset.diff === s.game.difficulty);
+    });
+    const canStart = L.can_start;
+    $("startBtn").disabled = !canStart;
+    $("startHint").textContent = canStart
+      ? `${L.count}人で開始します`
+      : `開始にはあと${Math.max(0, L.min_players - L.count)}人必要です（現在${L.count}人）`;
+  }
+}
+
+// ---- ゲーム ----
+function renderGame(){
+  const s = latest, g = s.game;
+  ensureBoard(g);
+
+  // HUD
+  $("attemptBadge").textContent = `挑戦 ${g.attempt}`;
+  $("diffBadge").textContent = `${DIFF_LABEL[g.difficulty]||g.difficulty} / ${g.num_players}人`;
+  let hearts = "";
+  for(let i=0;i<g.max_chances;i++) hearts += (i < g.chances ? "❤️" : "🤍");
+  $("hearts").textContent = hearts;
+  const slack = g.total_ops - g.shortest;
+  $("budgetLine").textContent =
+    `最短 ${g.shortest} 手 ／ みんなの合計 ${g.total_ops} 手` +
+    (slack > 0 ? `（${slack}手あまり → 誰かが「とどまる」必要）` : `（ぴったり！全員が動く）`);
+
+  syncSelection(s);
+  renderPlayers(s);
+  renderSelectionPanel(s);
+
+  // 結果アニメーション or 通常表示
+  const la = g.last_attempt;
+  const hasResult = la && (g.phase === "result" || g.phase === "won" || g.phase === "lost");
+  if(hasResult && la.attempt !== animatedId){
+    animatedId = la.attempt;
+    animateTrace(la, g);
+  } else if(!animating){
+    if(g.phase === "selecting"){
+      placeChar(g.start, true);
+      $("banner").classList.add("hidden");
+      $("commentary").textContent = "";
+    }
+    renderResultButtons(s);
+  }
+}
+
+// 盤面の生成（マップが変わった時だけ作り直す）
+function ensureBoard(g){
+  const sig = JSON.stringify([g.w, g.h, g.grid, g.goal]);
+  if(sig === boardSig) return;
+  boardSig = sig;
+
+  const board = $("board");
+  board.innerHTML = "";
+  board.style.gridTemplateColumns = `repeat(${g.w}, 1fr)`;
+  board.style.aspectRatio = `${g.w} / ${g.h}`;
+
+  for(let y=0;y<g.h;y++){
+    for(let x=0;x<g.w;x++){
+      const c = document.createElement("div");
+      c.className = "cell";
+      if(g.grid[y][x] === 1) c.classList.add("wall");
+      if(x === g.goal[0] && y === g.goal[1]){
+        c.classList.add("goal");
+        const f = document.createElement("div"); f.className="flag"; f.textContent="🏁";
+        c.appendChild(f);
+      }
+      board.appendChild(c);
+    }
+  }
+  // キャラ
+  const ch = document.createElement("div");
+  ch.className = "char"; ch.id = "char";
+  ch.style.width = `calc(100% / ${g.w} * 0.72)`;
+  ch.style.aspectRatio = "1";
+  board.appendChild(ch);
+  placeChar(g.start, true);
+}
+
+function placeChar(pos, instant){
+  const g = latest.game;
+  const ch = $("char"); if(!ch) return;
+  const setPos = () => {
+    ch.style.left = ((pos[0] + 0.5) / g.w * 100) + "%";
+    ch.style.top  = ((pos[1] + 0.5) / g.h * 100) + "%";
+  };
+  if(instant){
+    ch.style.transition = "none";
+    setPos();
+    // 次フレームで transition を戻す
+    requestAnimationFrame(() => requestAnimationFrame(() => { ch.style.transition = ""; }));
+  } else {
+    setPos();
+  }
+}
+
+// 選択状態の同期（進行中のローカル入力を壊さない）
+function syncSelection(s){
+  const g = s.game;
+  if(g.phase === "selecting"){
+    const key = "sel" + g.attempt;
+    if(curAttemptKey !== key){ curAttemptKey = key; mySeq = []; }
+    if(s.you.my_ops){ mySeq = s.you.my_ops.slice(); } // 提出済み or 再接続
+  }
+}
+
+function renderSelectionPanel(s){
+  const g = s.game, sel = $("selPanel");
+  const mySlot = s.you.slot;
+
+  // 選択パネルは「選択フェーズ」かつ「参加者」のときだけ操作可能
+  const active = (g.phase === "selecting") && (mySlot !== null);
+  sel.classList.toggle("hidden", g.phase !== "selecting");
+  if(g.phase !== "selecting") return;
+
+  if(mySlot === null){
+    $("turnInfo").textContent = "観戦中です（次のゲームから参加できます）。";
+    $("dpad").classList.add("hidden");
+    document.querySelectorAll("#selPanel .selctrl").forEach(e=>e.classList.add("hidden"));
+    $("seq").innerHTML = ""; $("selMsg").textContent = "";
+    return;
+  }
+  $("dpad").classList.remove("hidden");
+  document.querySelectorAll("#selPanel .selctrl").forEach(e=>e.classList.remove("hidden"));
+
+  const submitted = !!s.you.my_ops;
+  const opp = g.ops_per_player;
+  const startIdx = mySlot * opp + 1;
+  $("turnInfo").innerHTML =
+    `あなたは <b style="color:${SLOT_COLORS[mySlot%6]}">${mySlot+1}P</b>` +
+    `（全${g.num_players}人中 ${mySlot+1}番目）。あなたの操作は全体の ${startIdx}〜${startIdx+opp-1} 手目に実行されます。`;
+
+  // 選択列
+  const seq = $("seq"); seq.innerHTML = "";
+  for(let i=0;i<opp;i++){
+    const b = document.createElement("div");
+    const op = mySeq[i];
+    if(op){ b.className="seqbox"; b.textContent=OP_GLYPH[op]; b.style.color=SLOT_COLORS[mySlot%6]; }
+    else { b.className="seqbox empty"; b.textContent="?"; }
+    seq.appendChild(b);
+  }
+
+  // ボタンの有効/無効
+  const full = mySeq.length >= opp;
+  document.querySelectorAll("#dpad button").forEach(b => b.disabled = submitted || full);
+  $("undoBtn").disabled = submitted || mySeq.length === 0;
+  $("clearBtn").disabled = submitted || mySeq.length === 0;
+  $("submitBtn").classList.toggle("hidden", submitted);
+  $("submitBtn").disabled = !full;
+  $("unsubmitBtn").classList.toggle("hidden", !submitted);
+
+  const doneCount = s.game.submitted.filter(Boolean).length;
+  $("selMsg").textContent = submitted
+    ? `決定しました。全員の決定を待っています…（${doneCount}/${g.num_players}）`
+    : (full ? "「これで決定！」を押してください。" : `残り ${opp - mySeq.length} 手を選んでください。`);
+}
+
+function opsToGlyphs(ops, slot){
+  const box = document.createElement("div"); box.className = "ops";
+  (ops||[]).forEach(op => {
+    const g = document.createElement("div");
+    g.className = "opglyph"; g.textContent = OP_GLYPH[op];
+    g.style.background = SLOT_COLORS[slot % 6];
+    box.appendChild(g);
+  });
+  return box;
+}
+
+function renderPlayers(s){
+  const g = s.game, wrap = $("players"); wrap.innerHTML = "";
+  const reveal = (g.phase === "result" || g.phase === "won" || g.phase === "lost") && g.last_attempt;
+  for(let slot=0; slot<g.num_players; slot++){
+    const row = document.createElement("div"); row.className = "prow";
+    const no = document.createElement("div"); no.className="slotno";
+    no.textContent = (slot+1)+"P"; no.style.background = SLOT_COLORS[slot%6];
+    const nm = document.createElement("div"); nm.className="nm";
+    const info = s.lobby.slots.find(x => x.slot === slot);
+    nm.textContent = info ? info.name : (slot+1)+"P";
+    row.appendChild(no); row.appendChild(nm);
+    if(slot === s.you.slot){ const me=document.createElement("span"); me.className="me"; me.textContent="あなた"; me.style.marginLeft="6px"; row.appendChild(me); }
+
+    if(reveal){
+      row.appendChild(opsToGlyphs(g.last_attempt.ops_by_slot[String(slot)], slot));
+    } else {
+      const st = document.createElement("div"); st.className="st";
+      st.textContent = g.submitted[slot] ? "✓ 決定" : "考え中…";
+      if(g.submitted[slot]) st.style.color = "var(--good)";
+      row.appendChild(st);
+    }
+    wrap.appendChild(row);
+  }
+}
+
+// 実行アニメーション
+function animateTrace(la, g){
+  animating = true;
+  $("selPanel").classList.add("hidden");
+  $("banner").classList.add("hidden");
+  renderResultButtons({game:{phase:"animating"}}); // ボタン一旦隠す
+  placeChar(la.trace[0], true);
+
+  let i = 0;
+  const step = () => {
+    if(i >= la.steps.length){
+      const ch = $("char"); if(ch) ch.classList.remove("blocked");
+      animating = false;
+      showBanner(g);
+      renderResultButtons(latest);
+      return;
+    }
+    const st = la.steps[i];
+    placeChar(st.to, false);
+    const ch = $("char"); if(ch) ch.classList.toggle("blocked", !!st.blocked);
+    const nm = (latest.lobby.slots.find(x=>x.slot===st.owner)||{}).name || (st.owner+1)+"P";
+    let txt = `${i+1}/${la.steps.length}手目：<b style="color:${SLOT_COLORS[st.owner%6]}">${nm}</b> が「${OP_LABEL[st.op]}」`;
+    if(st.blocked) txt += ' <span style="color:var(--bad)">→ 壁にぶつかった！</span>';
+    else if(st.op === "S") txt += "（その場に留まる）";
+    $("commentary").innerHTML = txt;
+    i++;
+    setTimeout(step, 520);
+  };
+  setTimeout(step, 350);
+}
+
+function showBanner(g){
+  const b = $("banner"); b.classList.remove("hidden","win","lose","info");
+  if(g.phase === "won"){ b.classList.add("win"); b.textContent = "🎉 クリア！ 心がひとつになった！"; $("commentary").textContent=""; }
+  else if(g.phase === "lost"){ b.classList.add("lose"); b.textContent = "💥 ゲームオーバー… 息が合わなかった…"; }
+  else { b.classList.add("info"); b.textContent = `ゴールできなかった… 残りチャンス ${g.chances}。全員の手を見て作戦を立て直そう！`; }
+}
+
+function renderResultButtons(s){
+  const g = s.game;
+  const isHost = latest && latest.you.slot === 0;
+  const spectator = latest && latest.you.slot === null;
+  const showNext = g.phase === "result";
+  const showAgain = (g.phase === "won" || g.phase === "lost");
+  $("nextBtn").classList.toggle("hidden", !showNext || spectator);
+  $("nextBtn").textContent = `次の挑戦へ（残り${g.chances}）`;
+  $("againBtn").classList.toggle("hidden", !(showAgain && isHost));
+  $("againWait").classList.toggle("hidden", !(showAgain && !isHost));
+}
+
+// ================= 入力ハンドラ =================
+$("nameSave").onclick = () => send({type:"SET_NAME", name:$("nameInput").value});
+$("nameInput").addEventListener("keydown", e => { if(e.key==="Enter") $("nameSave").click(); });
+$("joinBtn").onclick = () => { if($("nameInput").value.trim()) send({type:"SET_NAME", name:$("nameInput").value}); send({type:"ENTER_GAME"}); };
+$("leaveBtn").onclick = () => send({type:"LEAVE_GAME"});
+document.querySelectorAll("#diffBtns button").forEach(b => {
+  b.onclick = () => send({type:"SET_DIFFICULTY", difficulty:b.dataset.diff});
+});
+$("startBtn").onclick = () => send({type:"START"});
+
+document.querySelectorAll("#dpad button").forEach(b => {
+  b.onclick = () => {
+    const g = latest.game;
+    if(mySeq.length < g.ops_per_player){ mySeq.push(b.dataset.op); renderGame(); }
+  };
+});
+$("undoBtn").onclick = () => { mySeq.pop(); renderGame(); };
+$("clearBtn").onclick = () => { mySeq = []; renderGame(); };
+$("submitBtn").onclick = () => {
+  const g = latest.game;
+  if(mySeq.length === g.ops_per_player) send({type:"SUBMIT_OPS", ops:mySeq});
+};
+$("unsubmitBtn").onclick = () => send({type:"UNSUBMIT"});
+$("nextBtn").onclick = () => send({type:"NEXT_ATTEMPT"});
+$("againBtn").onclick = () => send({type:"PLAY_AGAIN"});
+
+// 名前欄の初期値（前回の名前をタブに保持）
+$("nameInput").value = sessionStorage.getItem("telepath_name") || "";
+$("nameInput").addEventListener("input", () => sessionStorage.setItem("telepath_name", $("nameInput").value));
+
+connect();
+</script>
+</body>
+</html>
