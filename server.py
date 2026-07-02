@@ -118,6 +118,38 @@ def reset_game_keep_slots():
     app.state.game.difficulty = diff
 
 
+def all_slots_disconnected():
+    """スロットを占有している全員が切断中なら True（スロットが無い場合は False）。"""
+    if not app.state.slots:
+        return False
+    return all(not app.state.players.get(uid, {}).get("connected") for uid in app.state.slots)
+
+
+def reset_room():
+    """部屋を完全にロビーへ戻す（スロット解放・切断済みプレイヤーの掃除）。難易度は維持。"""
+    diff = app.state.game.difficulty
+    for uid in list(app.state.slots):
+        p = app.state.players.get(uid)
+        if p is not None:
+            p["slot_idx"] = None
+    app.state.slots = []
+    # 切断済みで残っているプレイヤー情報を掃除
+    for uid in list(app.state.players.keys()):
+        if not app.state.players[uid].get("connected"):
+            del app.state.players[uid]
+    app.state.game = Game()
+    app.state.game.difficulty = diff
+
+
+async def schedule_cleanup(delay=30):
+    """ゲーム中に全員切断したまま一定時間が過ぎたら部屋をリセットする（放置対策）。"""
+    await asyncio.sleep(delay)
+    async with app.state.lock:
+        if app.state.game.started and all_slots_disconnected():
+            reset_room()
+            await broadcast_state()
+
+
 # --- WebSocket ---------------------------------------------------------------
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -137,6 +169,10 @@ async def websocket_endpoint(websocket: WebSocket):
             app.state.players[uid] = {
                 "ws": websocket, "connected": True, "slot_idx": None, "name": "",
             }
+        # 全参加者が切断状態のまま新規/観戦者が来たら、放置された部屋をロビーへ戻す。
+        # （スロット保持中の本人が再接続した場合は connected=True になるためリセットされない）
+        if app.state.game.started and all_slots_disconnected():
+            reset_room()
         await send_safe(websocket, {"type": "ASSIGN_ID", "user_id": uid})
         await broadcast_state()
 
@@ -230,6 +266,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     g.submit(slot, [OP_STAY] * g.ops_per_player)
                     if g.all_submitted():
                         g.resolve()
+                # 全員切断のまま放置されたら一定時間後に部屋をリセット
+                asyncio.create_task(schedule_cleanup())
             await broadcast_state()
         return
 

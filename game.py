@@ -19,6 +19,7 @@
 """
 
 import random
+import uuid
 from collections import deque
 
 # --- 操作の定義 --------------------------------------------------------------
@@ -159,6 +160,7 @@ class Game:
         self.attempt = 0
         self.submissions = {}          # slot(int) -> list[op] または None
         self.last_attempt = None       # 直近に実行した挑戦の結果（公開用）
+        self.game_id = ""              # ゲーム開始ごとに変わる一意ID（クライアントのリセット判定用）
 
     def set_difficulty(self, difficulty):
         if not self.started and difficulty in DIFFICULTIES:
@@ -176,6 +178,7 @@ class Game:
         self.attempt = 1
         self.submissions = {i: None for i in range(num_players)}
         self.last_attempt = None
+        self.game_id = uuid.uuid4().hex[:8]
         self.phase = "selecting"
         self.started = True
 
@@ -245,6 +248,7 @@ class Game:
         return {
             "started": self.started,
             "phase": self.phase,
+            "game_id": self.game_id,
             "difficulty": self.difficulty,
             "num_players": self.num_players,
             "ops_per_player": self.ops_per_player,

@@ -249,7 +249,7 @@ let latest = null;
 let mySeq = [];               // 選択中の操作列（ローカル）
 let curAttemptKey = null;     // 選択リセット判定用
 let animating = false;
-let animatedId = null;        // 直近にアニメ済みの last_attempt.attempt
+let animatedKey = null;       // 直近にアニメ済みの「game_id:挑戦番号」
 let boardSig = null;          // 盤面再構築判定用
 
 // ---- DOM ----
@@ -363,10 +363,12 @@ function renderGame(){
   renderSelectionPanel(s);
 
   // 結果アニメーション or 通常表示
+  // game_id を含めた一意キーで判定する（「もう一度」で挑戦番号が1に戻っても衝突しない）
   const la = g.last_attempt;
   const hasResult = la && (g.phase === "result" || g.phase === "won" || g.phase === "lost");
-  if(hasResult && la.attempt !== animatedId){
-    animatedId = la.attempt;
+  const resultKey = la ? (g.game_id + ":" + la.attempt) : null;
+  if(hasResult && resultKey !== animatedKey){
+    animatedKey = resultKey;
     animateTrace(la, g);
   } else if(!animating){
     if(g.phase === "selecting"){
@@ -380,7 +382,7 @@ function renderGame(){
 
 // 盤面の生成（マップが変わった時だけ作り直す）
 function ensureBoard(g){
-  const sig = JSON.stringify([g.w, g.h, g.grid, g.goal]);
+  const sig = JSON.stringify([g.game_id, g.w, g.h, g.grid, g.goal]);
   if(sig === boardSig) return;
   boardSig = sig;
 
@@ -432,7 +434,8 @@ function placeChar(pos, instant){
 function syncSelection(s){
   const g = s.game;
   if(g.phase === "selecting"){
-    const key = "sel" + g.attempt;
+    // game_id を含めることで、ゲーム開始ごと・挑戦ごとに必ず選択がリセットされる
+    const key = g.game_id + ":" + g.attempt;
     if(curAttemptKey !== key){ curAttemptKey = key; mySeq = []; }
     if(s.you.my_ops){ mySeq = s.you.my_ops.slice(); } // 提出済み or 再接続
   }
