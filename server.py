@@ -141,13 +141,63 @@ def reset_room():
     app.state.game.difficulty = diff
 
 
-async def schedule_cleanup(delay=30):
-    """ゲーム中に全員切断したまま一定時間が過ぎたら部屋をリセットする（放置対策）。"""
-    await asyncio.sleep(delay)
+def slot_uid(slot):
+    """スロット番号 -> uid（範囲外なら None）。ゲーム中スロットは固定なので安定。"""
+    return app.state.slots[slot] if 0 <= slot < len(app.state.slots) else None
+
+
+def try_resolve():
+    """
+    接続中のプレイヤー全員が提出済みなら解決する。
+    未提出でも切断中のプレイヤーは「とどまる」で自動的に埋め、進行が止まらないようにする。
+    （＝1人が落ちても他の人が待たされ続けない。複数挑戦にも対応）
+    """
+    g = app.state.game
+    if g.phase != "selecting":
+        return
+    # 接続中で未提出の人が一人でもいれば、まだ待つ
+    for slot in range(g.num_players):
+        if g.submissions.get(slot) is None:
+            uid = slot_uid(slot)
+            if uid is not None and app.state.players.get(uid, {}).get("connected"):
+                return
+    # 残る未提出は切断者のみ → Stay で埋めて解決
+    for slot in range(g.num_players):
+        if g.submissions.get(slot) is None:
+            g.submit(slot, [OP_STAY] * g.ops_per_player)
+    if g.all_submitted():
+        g.resolve()
+
+
+async def schedule_disconnect_cleanup(uid, grace=10):
+    """
+    切断から grace 秒たっても復帰しなければ後片付けする。
+    この猶予により、リロード（＝すぐ同じ uid で再接続）では席や部屋を失わない。
+    - ロビー中 : スロットを解放し、プレイヤー情報を掃除。
+    - ゲーム中 : 全員切断なら部屋をリセット。そうでなければ席は保持（復帰可能）しつつ、
+                この人待ちで止まっていれば解決する。
+    """
+    await asyncio.sleep(grace)
     async with app.state.lock:
-        if app.state.game.started and all_slots_disconnected():
-            reset_room()
-            await broadcast_state()
+        p = app.state.players.get(uid)
+        if p is None or p.get("connected"):
+            return  # 既に復帰済み or 消滅済み → 何もしない
+        g = app.state.game
+        if not g.started:
+            if p.get("slot_idx") is not None:
+                try:
+                    app.state.slots.remove(uid)
+                except ValueError:
+                    pass
+                p["slot_idx"] = None
+                reindex_slots()
+            app.state.players.pop(uid, None)
+        else:
+            if all_slots_disconnected():
+                reset_room()
+            else:
+                try_resolve()
+        await broadcast_state()
 
 
 # --- WebSocket ---------------------------------------------------------------
@@ -178,7 +228,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            data = await websocket.receive_text()
+            data = await websocket.receive_text()  # 切断で WebSocketDisconnect
             try:
                 msg = json.loads(data)
             except Exception:
@@ -189,87 +239,78 @@ async def websocket_endpoint(websocket: WebSocket):
                 await send_safe(websocket, {"type": "PONG"})
                 continue
 
-            async with app.state.lock:
-                p = app.state.players.get(uid)
-                if p is None:
-                    continue
-                g = app.state.game
+            try:
+                async with app.state.lock:
+                    p = app.state.players.get(uid)
+                    if p is None:
+                        continue
+                    g = app.state.game
 
-                if mtype == "SET_NAME":
-                    p["name"] = str(msg.get("name", ""))[:16]
+                    if mtype == "SET_NAME":
+                        p["name"] = str(msg.get("name", ""))[:16]
 
-                elif mtype == "ENTER_GAME":
-                    if not g.started and p["slot_idx"] is None and len(app.state.slots) < MAX_PLAYERS:
-                        app.state.slots.append(uid)
-                        p["slot_idx"] = len(app.state.slots) - 1
+                    elif mtype == "ENTER_GAME":
+                        if not g.started and p["slot_idx"] is None and len(app.state.slots) < MAX_PLAYERS:
+                            app.state.slots.append(uid)
+                            p["slot_idx"] = len(app.state.slots) - 1
 
-                elif mtype == "LEAVE_GAME":
-                    if not g.started and p["slot_idx"] is not None:
-                        try:
-                            app.state.slots.remove(uid)
-                        except ValueError:
-                            pass
-                        p["slot_idx"] = None
-                        reindex_slots()
+                    elif mtype == "LEAVE_GAME":
+                        if not g.started and p["slot_idx"] is not None:
+                            try:
+                                app.state.slots.remove(uid)
+                            except ValueError:
+                                pass
+                            p["slot_idx"] = None
+                            reindex_slots()
 
-                elif mtype == "SET_DIFFICULTY":
-                    if p["slot_idx"] == 0 and not g.started:
-                        g.set_difficulty(str(msg.get("difficulty", "")))
+                    elif mtype == "SET_DIFFICULTY":
+                        if p["slot_idx"] == 0 and not g.started:
+                            g.set_difficulty(str(msg.get("difficulty", "")))
 
-                elif mtype == "START":
-                    if p["slot_idx"] == 0 and not g.started and len(app.state.slots) >= MIN_PLAYERS:
-                        g.start(len(app.state.slots))
+                    elif mtype == "START":
+                        if p["slot_idx"] == 0 and not g.started and len(app.state.slots) >= MIN_PLAYERS:
+                            g.start(len(app.state.slots))
 
-                elif mtype == "SUBMIT_OPS":
-                    slot = p["slot_idx"]
-                    if slot is not None and g.submit(slot, msg.get("ops")):
-                        if g.all_submitted():
-                            g.resolve()
+                    elif mtype == "SUBMIT_OPS":
+                        slot = p["slot_idx"]
+                        if slot is not None and g.submit(slot, msg.get("ops")):
+                            try_resolve()
 
-                elif mtype == "UNSUBMIT":
-                    slot = p["slot_idx"]
-                    if slot is not None:
-                        g.unsubmit(slot)
+                    elif mtype == "UNSUBMIT":
+                        slot = p["slot_idx"]
+                        if slot is not None:
+                            g.unsubmit(slot)
 
-                elif mtype == "NEXT_ATTEMPT":
-                    g.next_attempt()
+                    elif mtype == "NEXT_ATTEMPT":
+                        g.next_attempt()
 
-                elif mtype == "PLAY_AGAIN":
-                    if p["slot_idx"] == 0 and g.phase in ("won", "lost"):
-                        reset_game_keep_slots()
+                    elif mtype == "PLAY_AGAIN":
+                        if p["slot_idx"] == 0 and g.phase in ("won", "lost"):
+                            reset_game_keep_slots()
 
-                await broadcast_state()
+                    await broadcast_state()
+            except Exception:
+                # ハンドラ内の想定外エラーでは接続を切らずに継続する
+                pass
 
     except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        # 切断時の後片付け。ただし「自分が今もこのプレイヤーの現行接続」の場合のみ。
+        # リロード等で新しい接続が既に ws を差し替えているなら、古い接続の切断は無視する
+        # （＝幽霊切断で connected を落として画面を固めてしまうのを防ぐ）。
         async with app.state.lock:
             p = app.state.players.get(uid)
-            if p is None:
-                return
-            p["connected"] = False
-            p["ws"] = None
-            g = app.state.game
-
-            if not g.started:
-                # ロビー中の切断はスロットを解放して繰り上げる
-                if p.get("slot_idx") is not None:
-                    try:
-                        app.state.slots.remove(uid)
-                    except ValueError:
-                        pass
-                    p["slot_idx"] = None
-                    reindex_slots()
-            else:
-                # ゲーム中はスロットを保持（復帰可能）。
-                # 選択中に未提出のまま切断したら「とどまる」で自動提出し、進行を止めない。
-                slot = p.get("slot_idx")
-                if slot is not None and g.phase == "selecting" and g.submissions.get(slot) is None:
-                    g.submit(slot, [OP_STAY] * g.ops_per_player)
-                    if g.all_submitted():
-                        g.resolve()
-                # 全員切断のまま放置されたら一定時間後に部屋をリセット
-                asyncio.create_task(schedule_cleanup())
-            await broadcast_state()
-        return
+            if p is not None and p.get("ws") is websocket:
+                p["connected"] = False
+                p["ws"] = None
+                # この人待ちで止まらないよう、必要なら解決を試みる
+                try_resolve()
+                # 席の解放・部屋リセットは猶予後に判定（リロードで席を失わないように）
+                asyncio.create_task(schedule_disconnect_cleanup(uid))
+                await broadcast_state()
 
 
 # --- 静的ファイル配信 --------------------------------------------------------
