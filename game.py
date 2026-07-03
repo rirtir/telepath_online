@@ -216,6 +216,18 @@ class Game:
         self.pins = {}                 # slot -> [[x,y], ...] 作戦ピン
         self.stage = 0                 # 現在のステージ番号（1 始まり）
         self.total_stars = 0           # このランで獲得した★の合計
+        self.order = []                # 実行順（order[k] = k番目に動くプレイヤーの slot）
+        self.order_mode = "random"     # "random"=階ごとにシャッフル / "fixed"=スロット順
+        self.pins_enabled = False      # ピン機能（強力なのでデフォルトOFF・ロビーで変更可）
+
+    def set_options(self, order_mode=None, pins_enabled=None):
+        """ロビーで変更できるオプション（ゲーム中は変更不可）。"""
+        if self.started:
+            return
+        if order_mode in ("fixed", "random"):
+            self.order_mode = order_mode
+        if isinstance(pins_enabled, bool):
+            self.pins_enabled = pins_enabled
 
     def set_difficulty(self, difficulty):
         if not self.started and difficulty in DIFFICULTIES:
@@ -240,11 +252,15 @@ class Game:
         self._setup_stage(DIFFICULTIES[self.difficulty])
 
     def _setup_stage(self, cfg):
-        """新しいマップ・封印・ジェムを生成してステージを始める。"""
+        """新しいマップ・封印・ジェム・実行順を生成してステージを始める。"""
         self.chances = cfg["chances"]
         self.w, self.h = cfg["w"], cfg["h"]
         self.grid, self.start_pos, self.goal, self.shortest = generate_map(cfg, self.total_ops)
-        self.owners = [s for s in range(self.num_players) for _ in range(self.ops_per_player)]
+        # 実行順: 固定ならスロット順、ランダムなら階ごとにシャッフル（役割の固定化を防ぐ）
+        self.order = list(range(self.num_players))
+        if self.order_mode == "random":
+            random.shuffle(self.order)
+        self.owners = [s for s in self.order for _ in range(self.ops_per_player)]
         self.seals = self._gen_seals(cfg)
         self.gems = self._gen_gems(cfg)
         self.attempt = 1
@@ -321,6 +337,8 @@ class Game:
 
     def place_pin(self, slot, x, y):
         """作戦ピンを置く/外す（トグル）。上限を超えたら古いものから消える。"""
+        if not self.pins_enabled:
+            return
         if self.phase != "selecting" or slot not in self.pins:
             return
         if not (0 <= x < self.w and 0 <= y < self.h) or self.grid[y][x] == 1:
@@ -345,7 +363,7 @@ class Game:
         if self.phase != "selecting":
             return
         ordered, owners = [], []
-        for slot in range(self.num_players):
+        for slot in self.order:
             ops = self.submissions[slot] or [OP_STAY] * self.ops_per_player
             for op in ops:
                 ordered.append(op)
@@ -422,4 +440,7 @@ class Game:
             "max_pins": MAX_PINS,
             "stage": self.stage,
             "total_stars": self.total_stars,
+            "order": self.order,
+            "order_mode": self.order_mode,
+            "pins_enabled": self.pins_enabled,
         }

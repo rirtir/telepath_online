@@ -112,10 +112,13 @@ def reindex_slots():
 
 
 def reset_game_keep_slots():
-    """勝敗確定後に「もう一度」でロビーへ戻す（参加者と難易度は維持）。"""
-    diff = app.state.game.difficulty
-    app.state.game = Game()
-    app.state.game.difficulty = diff
+    """ロビーへ戻す（参加者・難易度・オプションは維持）。"""
+    g = app.state.game
+    ng = Game()
+    ng.difficulty = g.difficulty
+    ng.order_mode = g.order_mode
+    ng.pins_enabled = g.pins_enabled
+    app.state.game = ng
 
 
 def all_slots_disconnected():
@@ -126,8 +129,7 @@ def all_slots_disconnected():
 
 
 def reset_room():
-    """部屋を完全にロビーへ戻す（スロット解放・切断済みプレイヤーの掃除）。難易度は維持。"""
-    diff = app.state.game.difficulty
+    """部屋を完全にロビーへ戻す（スロット解放・切断済みプレイヤーの掃除）。設定は維持。"""
     for uid in list(app.state.slots):
         p = app.state.players.get(uid)
         if p is not None:
@@ -137,8 +139,7 @@ def reset_room():
     for uid in list(app.state.players.keys()):
         if not app.state.players[uid].get("connected"):
             del app.state.players[uid]
-    app.state.game = Game()
-    app.state.game.difficulty = diff
+    reset_game_keep_slots()
 
 
 def slot_uid(slot):
@@ -267,6 +268,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         if p["slot_idx"] == 0 and not g.started:
                             g.set_difficulty(str(msg.get("difficulty", "")))
 
+                    elif mtype == "SET_OPTIONS":
+                        if p["slot_idx"] == 0 and not g.started:
+                            g.set_options(msg.get("order_mode"), msg.get("pins_enabled"))
+
                     elif mtype == "START":
                         if p["slot_idx"] == 0 and not g.started and len(app.state.slots) >= MIN_PLAYERS:
                             g.start(len(app.state.slots))
@@ -298,6 +303,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     elif mtype == "PLAY_AGAIN":
                         if p["slot_idx"] == 0 and g.phase in ("won", "lost"):
+                            reset_game_keep_slots()
+
+                    elif mtype == "ABORT_GAME":
+                        # ゲーム中に参加者の誰でも中断してロビーへ戻せる（全員に反映）
+                        if g.started and p["slot_idx"] is not None:
                             reset_game_keep_slots()
 
                     await broadcast_state()
