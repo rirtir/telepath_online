@@ -114,6 +114,27 @@
   .opglyph{ width:26px; height:26px; border-radius:6px; display:flex; align-items:center;
     justify-content:center; font-size:15px; font-weight:700; color:#0c111b; }
 
+  /* ジェム・ピン・軌跡・封印 */
+  .gem{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:min(5vw,24px); z-index:2; transition:opacity .3s, transform .3s; pointer-events:none; }
+  .gem.got{ opacity:.12; transform:scale(.5); }
+  .pin{ position:absolute; width:38%; aspect-ratio:1; border-radius:50% 50% 50% 4px;
+    display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:800;
+    color:#0c111b; border:1.5px solid rgba(0,0,0,.35); z-index:4; box-shadow:0 1px 4px rgba(0,0,0,.5);
+    pointer-events:none; }
+  .pin.p0{ left:4%; top:4%; } .pin.p1{ right:4%; top:4%; }
+  .pin.p2{ left:4%; bottom:4%; } .pin.p3{ right:4%; bottom:4%; }
+  .ghost{ position:absolute; inset:36%; border-radius:50%; background:rgba(255,255,255,.16);
+    z-index:1; pointer-events:none; }
+  .sealtag{ font-size:12px; background:rgba(255,93,108,.15); border:1px solid var(--bad);
+    color:var(--bad); border-radius:6px; padding:1px 7px; margin-left:6px; white-space:nowrap; }
+  #dpad button{ position:relative; }
+  #dpad button.sealed{ opacity:.35; }
+  #dpad button.sealed::after{ content:"🚫"; position:absolute; inset:0; display:flex;
+    align-items:center; justify-content:center; font-size:20px; }
+  .starline{ font-size:30px; letter-spacing:6px; margin-top:4px; }
+  .pinhint{ text-align:center; color:var(--muted); font-size:12px; margin-top:4px; }
+
   .banner{ text-align:center; padding:14px; border-radius:12px; margin-top:12px; font-weight:700; }
   .banner.win{ background:rgba(70,209,122,.15); border:1px solid var(--good); color:var(--good); }
   .banner.lose{ background:rgba(255,93,108,.13); border:1px solid var(--bad); color:var(--bad); }
@@ -174,6 +195,10 @@
         <li>全操作を終えた時点でキャラがゴール上にいればクリア。壁や画面外へは進めず「空振り」します。</li>
         <li><b>合計手数 ＞ 最短距離</b> のときは、誰かが「とどまる」を選ぶ必要があります。</li>
         <li>失敗しても3回まで挑戦可能。失敗すると全員の選択が公開されるので、それを読んで次の手を合わせましょう。</li>
+        <li><b>📍ピン</b>：選択中に盤面をタップすると、仲間にピンで意思表示できます（1人2個まで）。</li>
+        <li><b>🚫封印</b>：ふつう以上では、各自に「使えない方向」が公開で割り振られます。誰がどの方向を担当できるか、全員の封印から推理しましょう。</li>
+        <li><b>💎ジェム</b>：寄り道の位置にあるサブ目標。クリア時に<b>全回収で★+1、一発クリアで★+1</b>（最大★3）。全ジェム回収は必ず可能な配置になっています。</li>
+        <li><b>ステージ</b>：クリアするたびに次のマップへ。合計★を積み上げて記録を伸ばしましょう。ミスが尽きたらランは終了です。</li>
       </ul>
       <p class="muted">※ 別のタブ / 端末で同じURLを開くと、その分だけ参加できます（2〜6人）。</p>
     </details>
@@ -182,6 +207,8 @@
   <!-- ============ ゲーム ============ -->
   <div id="game" class="panel hidden">
     <div class="hud">
+      <span class="badge" id="stageBadge">ステージ 1</span>
+      <span class="badge" id="starsBadge">★ 0</span>
       <span class="badge" id="attemptBadge">挑戦 1</span>
       <span class="hearts" id="hearts"></span>
       <span class="spacer"></span>
@@ -219,6 +246,7 @@
         <button id="unsubmitBtn" class="ghost hidden">やり直す</button>
       </div>
       <div class="center muted" id="selMsg" style="font-size:13px;margin-top:6px;"></div>
+      <div class="pinhint" id="pinHint"></div>
     </div>
 
     <!-- プレイヤーの状態 / 公開 -->
@@ -228,7 +256,8 @@
     <div id="banner" class="banner hidden"></div>
     <div class="center mt">
       <button id="nextBtn" class="hidden">次の挑戦へ</button>
-      <button id="againBtn" class="gold hidden">もう一度あそぶ</button>
+      <button id="nextStageBtn" class="gold hidden">次のステージへ</button>
+      <button id="againBtn" class="ghost hidden">ロビーへ戻る</button>
       <span id="againWait" class="muted hidden" style="font-size:13px;">ホストの操作を待っています…</span>
     </div>
   </div>
@@ -348,6 +377,8 @@ function renderGame(){
   ensureBoard(g);
 
   // HUD
+  $("stageBadge").textContent = `ステージ ${g.stage}`;
+  $("starsBadge").textContent = `★ ${g.total_stars}`;
   $("attemptBadge").textContent = `挑戦 ${g.attempt}`;
   $("diffBadge").textContent = `${DIFF_LABEL[g.difficulty]||g.difficulty} / ${g.num_players}人`;
   let hearts = "";
@@ -361,6 +392,7 @@ function renderGame(){
   syncSelection(s);
   renderPlayers(s);
   renderSelectionPanel(s);
+  renderOverlays(s);
 
   // 結果アニメーション or 通常表示
   // game_id を含めた一意キーで判定する（「もう一度」で挑戦番号が1に戻っても衝突しない）
@@ -382,7 +414,7 @@ function renderGame(){
 
 // 盤面の生成（マップが変わった時だけ作り直す）
 function ensureBoard(g){
-  const sig = JSON.stringify([g.game_id, g.w, g.h, g.grid, g.goal]);
+  const sig = JSON.stringify([g.game_id, g.w, g.h, g.grid, g.goal, g.gems]);
   if(sig === boardSig) return;
   boardSig = sig;
 
@@ -391,15 +423,21 @@ function ensureBoard(g){
   board.style.gridTemplateColumns = `repeat(${g.w}, 1fr)`;
   board.style.aspectRatio = `${g.w} / ${g.h}`;
 
+  const gemSet = new Set((g.gems||[]).map(p => p[0]+","+p[1]));
   for(let y=0;y<g.h;y++){
     for(let x=0;x<g.w;x++){
       const c = document.createElement("div");
       c.className = "cell";
+      c.dataset.x = x; c.dataset.y = y;
       if(g.grid[y][x] === 1) c.classList.add("wall");
       if(x === g.goal[0] && y === g.goal[1]){
         c.classList.add("goal");
         const f = document.createElement("div"); f.className="flag"; f.textContent="🏁";
         c.appendChild(f);
+      }
+      if(gemSet.has(x+","+y)){
+        const gm = document.createElement("div"); gm.className="gem"; gm.textContent="💎";
+        c.appendChild(gm);
       }
       board.appendChild(c);
     }
@@ -430,6 +468,59 @@ function placeChar(pos, instant){
   }
 }
 
+// ピン・前回の軌跡・ジェム状態のオーバーレイ描画
+function cellAt(x, y){
+  return document.querySelector(`#board .cell[data-x="${x}"][data-y="${y}"]`);
+}
+function gemAt(pos){
+  const c = cellAt(pos[0], pos[1]);
+  return c ? c.querySelector(".gem") : null;
+}
+function renderOverlays(s){
+  const g = s.game;
+  // 既存のピン・軌跡を消す
+  document.querySelectorAll("#board .pin, #board .ghost").forEach(e => e.remove());
+
+  if(g.phase === "selecting" && !animating){
+    // 新しい挑戦の開始時はジェムを全て復活させる
+    document.querySelectorAll("#board .gem.got").forEach(e => e.classList.remove("got"));
+
+    // 前回の挑戦の軌跡をうっすら表示（学習材料）
+    if(g.last_attempt && g.attempt > 1){
+      const seen = new Set();
+      g.last_attempt.trace.forEach(p => {
+        const k = p[0]+","+p[1];
+        if(seen.has(k)) return;
+        seen.add(k);
+        const c = cellAt(p[0], p[1]);
+        if(c){ const d = document.createElement("div"); d.className = "ghost"; c.appendChild(d); }
+      });
+    }
+
+    // 全員のピン（スロット色・番号つき、セル四隅に重ならないよう配置）
+    (g.pins||[]).forEach((list, slot) => {
+      (list||[]).forEach(p => {
+        const c = cellAt(p[0], p[1]);
+        if(!c) return;
+        const d = document.createElement("div");
+        d.className = "pin p" + (slot % 4);
+        d.textContent = slot + 1;
+        d.style.background = SLOT_COLORS[slot % 6];
+        c.appendChild(d);
+      });
+    });
+  }
+}
+
+// 盤面タップ = 自分のピンを置く/外す（選択フェーズ中のみ）
+$("board").onclick = (e) => {
+  const cell = e.target.closest(".cell");
+  if(!cell || !latest) return;
+  const g = latest.game;
+  if(!g.started || g.phase !== "selecting" || latest.you.slot === null || animating) return;
+  send({type:"PLACE_PIN", x:+cell.dataset.x, y:+cell.dataset.y});
+};
+
 // 選択状態の同期（進行中のローカル入力を壊さない）
 function syncSelection(s){
   const g = s.game;
@@ -454,7 +545,7 @@ function renderSelectionPanel(s){
     $("turnInfo").textContent = "観戦中です（次のゲームから参加できます）。";
     $("dpad").classList.add("hidden");
     document.querySelectorAll("#selPanel .selctrl").forEach(e=>e.classList.add("hidden"));
-    $("seq").innerHTML = ""; $("selMsg").textContent = "";
+    $("seq").innerHTML = ""; $("selMsg").textContent = ""; $("pinHint").textContent = "";
     return;
   }
   $("dpad").classList.remove("hidden");
@@ -463,9 +554,11 @@ function renderSelectionPanel(s){
   const submitted = !!s.you.my_ops;
   const opp = g.ops_per_player;
   const startIdx = mySlot * opp + 1;
+  const mySeal = (g.seals || [])[mySlot] || null;
   $("turnInfo").innerHTML =
     `あなたは <b style="color:${SLOT_COLORS[mySlot%6]}">${mySlot+1}P</b>` +
-    `（全${g.num_players}人中 ${mySlot+1}番目）。あなたの操作は全体の ${startIdx}〜${startIdx+opp-1} 手目に実行されます。`;
+    `（全${g.num_players}人中 ${mySlot+1}番目）。あなたの操作は全体の ${startIdx}〜${startIdx+opp-1} 手目に実行されます。` +
+    (mySeal ? `<br><b style="color:var(--bad)">🚫 あなたは「${OP_LABEL[mySeal]}」が封印されています</b>` : "");
 
   // 選択列
   const seq = $("seq"); seq.innerHTML = "";
@@ -477,9 +570,13 @@ function renderSelectionPanel(s){
     seq.appendChild(b);
   }
 
-  // ボタンの有効/無効
+  // ボタンの有効/無効（封印された方向は使えない）
   const full = mySeq.length >= opp;
-  document.querySelectorAll("#dpad button").forEach(b => b.disabled = submitted || full);
+  document.querySelectorAll("#dpad button").forEach(b => {
+    const sealed = mySeal !== null && b.dataset.op === mySeal;
+    b.disabled = submitted || full || sealed;
+    b.classList.toggle("sealed", sealed);
+  });
   $("undoBtn").disabled = submitted || mySeq.length === 0;
   $("clearBtn").disabled = submitted || mySeq.length === 0;
   $("submitBtn").classList.toggle("hidden", submitted);
@@ -490,6 +587,10 @@ function renderSelectionPanel(s){
   $("selMsg").textContent = submitted
     ? `決定しました。全員の決定を待っています…（${doneCount}/${g.num_players}）`
     : (full ? "「これで決定！」を押してください。" : `残り ${opp - mySeq.length} 手を選んでください。`);
+
+  const myPins = ((g.pins || [])[mySlot] || []).length;
+  $("pinHint").textContent =
+    `📍 盤面をタップすると仲間にピンで意思表示できます（あなたのピン ${myPins}/${g.max_pins}・もう一度タップで削除）`;
 }
 
 function opsToGlyphs(ops, slot){
@@ -515,6 +616,8 @@ function renderPlayers(s){
     nm.textContent = info ? info.name : (slot+1)+"P";
     row.appendChild(no); row.appendChild(nm);
     if(slot === s.you.slot){ const me=document.createElement("span"); me.className="me"; me.textContent="あなた"; me.style.marginLeft="6px"; row.appendChild(me); }
+    const seal = (g.seals || [])[slot];
+    if(seal){ const st=document.createElement("span"); st.className="sealtag"; st.textContent="🚫"+OP_LABEL[seal]; row.appendChild(st); }
 
     if(reveal){
       row.appendChild(opsToGlyphs(g.last_attempt.ops_by_slot[String(slot)], slot));
@@ -534,6 +637,9 @@ function animateTrace(la, g){
   $("selPanel").classList.add("hidden");
   $("banner").classList.add("hidden");
   renderResultButtons({game:{phase:"animating"}}); // ボタン一旦隠す
+  // 実行アニメ前にピン・軌跡を消し、ジェムを未回収状態に戻す
+  document.querySelectorAll("#board .pin, #board .ghost").forEach(e => e.remove());
+  document.querySelectorAll("#board .gem.got").forEach(e => e.classList.remove("got"));
   placeChar(la.trace[0], true);
 
   let i = 0;
@@ -552,6 +658,12 @@ function animateTrace(la, g){
     let txt = `${i+1}/${la.steps.length}手目：<b style="color:${SLOT_COLORS[st.owner%6]}">${nm}</b> が「${OP_LABEL[st.op]}」`;
     if(st.blocked) txt += ' <span style="color:var(--bad)">→ 壁にぶつかった！</span>';
     else if(st.op === "S") txt += "（その場に留まる）";
+    // ジェム回収演出
+    const gem = gemAt(st.to);
+    if(gem && !gem.classList.contains("got")){
+      gem.classList.add("got");
+      txt += ' <span style="color:var(--gold)">💎ゲット！</span>';
+    }
     $("commentary").innerHTML = txt;
     i++;
     setTimeout(step, 520);
@@ -561,9 +673,32 @@ function animateTrace(la, g){
 
 function showBanner(g){
   const b = $("banner"); b.classList.remove("hidden","win","lose","info");
-  if(g.phase === "won"){ b.classList.add("win"); b.textContent = "🎉 クリア！ 心がひとつになった！"; $("commentary").textContent=""; }
-  else if(g.phase === "lost"){ b.classList.add("lose"); b.textContent = "💥 ゲームオーバー… 息が合わなかった…"; }
-  else { b.classList.add("info"); b.textContent = `ゴールできなかった… 残りチャンス ${g.chances}。全員の手を見て作戦を立て直そう！`; }
+  const la = g.last_attempt || {};
+  const gemTotal = (g.gems||[]).length;
+  const gemGot = (la.gems||[]).filter(Boolean).length;
+  const gemNote = gemTotal ? `💎 ${gemGot}/${gemTotal}` : "";
+
+  if(g.phase === "won"){
+    b.classList.add("win");
+    const stars = la.stars || 1;
+    const notes = [];
+    if(gemTotal) notes.push(gemNote + (gemGot === gemTotal ? " 全回収！" : ""));
+    notes.push(la.attempt === 1 ? "一発クリア！" : `${la.attempt}回目でクリア`);
+    b.innerHTML = `🎉 ステージ ${g.stage} クリア！ 心がひとつになった！` +
+      `<div class="starline">${"★".repeat(stars)}<span style="opacity:.25">${"★".repeat(3-stars)}</span></div>` +
+      `<div style="font-weight:normal;font-size:13px;opacity:.85">${notes.join("・")}</div>`;
+    $("commentary").textContent="";
+  }
+  else if(g.phase === "lost"){
+    b.classList.add("lose");
+    b.innerHTML = `💥 ゲームオーバー… ステージ ${g.stage} で力尽きた` +
+      `<div style="font-weight:normal;font-size:13px;opacity:.85;margin-top:4px">このランの記録：ステージ ${g.stage} 到達・合計 ★${g.total_stars}</div>`;
+  }
+  else {
+    b.classList.add("info");
+    b.textContent = `ゴールできなかった… 残りチャンス ${g.chances}。全員の手を見て作戦を立て直そう！` +
+      (gemTotal ? `（この挑戦の ${gemNote}）` : "");
+  }
 }
 
 function renderResultButtons(s){
@@ -571,11 +706,12 @@ function renderResultButtons(s){
   const isHost = latest && latest.you.slot === 0;
   const spectator = latest && latest.you.slot === null;
   const showNext = g.phase === "result";
-  const showAgain = (g.phase === "won" || g.phase === "lost");
+  const showEnd = (g.phase === "won" || g.phase === "lost");
   $("nextBtn").classList.toggle("hidden", !showNext || spectator);
   $("nextBtn").textContent = `次の挑戦へ（残り${g.chances}）`;
-  $("againBtn").classList.toggle("hidden", !(showAgain && isHost));
-  $("againWait").classList.toggle("hidden", !(showAgain && !isHost));
+  $("nextStageBtn").classList.toggle("hidden", !(g.phase === "won" && isHost));
+  $("againBtn").classList.toggle("hidden", !(showEnd && isHost));
+  $("againWait").classList.toggle("hidden", !(showEnd && !isHost));
 }
 
 // ================= 入力ハンドラ =================
@@ -602,6 +738,7 @@ $("submitBtn").onclick = () => {
 };
 $("unsubmitBtn").onclick = () => send({type:"UNSUBMIT"});
 $("nextBtn").onclick = () => send({type:"NEXT_ATTEMPT"});
+$("nextStageBtn").onclick = () => send({type:"NEXT_STAGE"});
 $("againBtn").onclick = () => send({type:"PLAY_AGAIN"});
 
 // 名前欄の初期値（前回の名前をタブに保持）

@@ -281,8 +281,20 @@ async def websocket_endpoint(websocket: WebSocket):
                         if slot is not None:
                             g.unsubmit(slot)
 
+                    elif mtype == "PLACE_PIN":
+                        slot = p["slot_idx"]
+                        if slot is not None:
+                            try:
+                                g.place_pin(slot, int(msg.get("x")), int(msg.get("y")))
+                            except (TypeError, ValueError):
+                                pass
+
                     elif mtype == "NEXT_ATTEMPT":
                         g.next_attempt()
+
+                    elif mtype == "NEXT_STAGE":
+                        if p["slot_idx"] == 0 and g.phase == "won":
+                            g.next_stage()
 
                     elif mtype == "PLAY_AGAIN":
                         if p["slot_idx"] == 0 and g.phase in ("won", "lost"):
