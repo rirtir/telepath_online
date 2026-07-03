@@ -124,7 +124,7 @@
     pointer-events:none; }
   .pin.p0{ left:4%; top:4%; } .pin.p1{ right:4%; top:4%; }
   .pin.p2{ left:4%; bottom:4%; } .pin.p3{ right:4%; bottom:4%; }
-  .ghost{ position:absolute; inset:36%; border-radius:50%; background:rgba(255,255,255,.16);
+  .trail{ position:absolute; inset:36%; border-radius:50%; background:rgba(255,255,255,.16);
     z-index:1; pointer-events:none; }
   .sealtag{ font-size:12px; background:rgba(255,93,108,.15); border:1px solid var(--bad);
     color:var(--bad); border-radius:6px; padding:1px 7px; margin-left:6px; white-space:nowrap; }
@@ -479,7 +479,7 @@ function gemAt(pos){
 function renderOverlays(s){
   const g = s.game;
   // 既存のピン・軌跡を消す
-  document.querySelectorAll("#board .pin, #board .ghost").forEach(e => e.remove());
+  document.querySelectorAll("#board .pin, #board .trail").forEach(e => e.remove());
 
   if(g.phase === "selecting" && !animating){
     // 新しい挑戦の開始時はジェムを全て復活させる
@@ -493,7 +493,7 @@ function renderOverlays(s){
         if(seen.has(k)) return;
         seen.add(k);
         const c = cellAt(p[0], p[1]);
-        if(c){ const d = document.createElement("div"); d.className = "ghost"; c.appendChild(d); }
+        if(c){ const d = document.createElement("div"); d.className = "trail"; c.appendChild(d); }
       });
     }
 
@@ -638,7 +638,7 @@ function animateTrace(la, g){
   $("banner").classList.add("hidden");
   renderResultButtons({game:{phase:"animating"}}); // ボタン一旦隠す
   // 実行アニメ前にピン・軌跡を消し、ジェムを未回収状態に戻す
-  document.querySelectorAll("#board .pin, #board .ghost").forEach(e => e.remove());
+  document.querySelectorAll("#board .pin, #board .trail").forEach(e => e.remove());
   document.querySelectorAll("#board .gem.got").forEach(e => e.classList.remove("got"));
   placeChar(la.trace[0], true);
 
